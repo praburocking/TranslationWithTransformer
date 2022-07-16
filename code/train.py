@@ -45,7 +45,7 @@ def train(model,optimizer,loss_fn,batch_size):
        # print("##############")
         tgt_input=tgt[:,:-1]
         tgt_output=tgt[:,1:]
-        tgt_mask=mask(tgt_input,SPECIAL_CHAR['<PAD>']).to(device=DEVICE)
+        tgt_mask=mask(tgt_input,SPECIAL_CHAR['<PAD>'],seq_dim=SEQ_DIM).to(device=DEVICE)
         src_mask=padding_mask(src,SPECIAL_CHAR['<PAD>']).to(device=DEVICE)
 
         logits=transformer(src,src_mask,tgt_input,tgt_mask)
