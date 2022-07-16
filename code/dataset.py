@@ -17,6 +17,7 @@ from torch.nn import Transformer
 import math
 from torch.utils.data import Dataset
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# DEVICE='cpu'
 from torch.nn.utils.rnn import pad_sequence
 
 def read_file_to_list(path):
@@ -136,23 +137,23 @@ class Vocab:
 
 
 class CusDataset(Dataset):
-    def __init__(self, lang1, lang2, lang1_vocab=None, lang2_vocab=None):
+    def __init__(self, src_lang, tgt_lang, src_lang_vocab=None, tgt_lang_vocab=None):
 
-        self.lang1_vocab = Vocab(max_size=40000, min_frequency=1) if lang1_vocab is None else lang1_vocab
-        self.lang2_vocab = Vocab(max_size=40000, min_frequency=1) if lang2_vocab is None else lang2_vocab
-        self.lang1 = lang1
-        self.lang2 = lang2
-        if lang1_vocab is not None:
-            self.lang1_vocab.build_vocab(lang1)
-        if lang2_vocab is not None:
-            self.lang2_vocab.build_vocab(lang2)
+        self.src_lang_vocab = Vocab(max_size=40000, min_frequency=1) if src_lang_vocab is None else src_lang_vocab
+        self.tgt_lang_vocab = Vocab(max_size=40000, min_frequency=1) if tgt_lang_vocab is None else tgt_lang_vocab
+        self.src_lang = src_lang
+        self.tgt_lang = tgt_lang
+        if src_lang_vocab is not None:
+            self.src_lang_vocab.build_vocab(src_lang)
+        if tgt_lang_vocab is not None:
+            self.tgt_lang_vocab.build_vocab(tgt_lang)
 
     def __getitem__(self, n):
-        return torch.Tensor(self.lang1_vocab.numericalize(self.lang1[n])), torch.Tensor(
-            self.lang2_vocab.numericalize(self.lang2[n]))
+        return torch.Tensor(self.src_lang_vocab.numericalize(self.src_lang[n])), torch.Tensor(
+            self.tgt_lang_vocab.numericalize(self.tgt_lang[n]))
 
     def __len__(self):
-        return len(self.lang2)
+        return len(self.tgt_lang)
 
 
 class Collate:
@@ -163,8 +164,8 @@ class Collate:
         #         breakpoint()
         source_data = [item[0] for item in batch_data]
         target_data = [item[1] for item in batch_data]
-        source = pad_sequence(source_data, batch_first=False, padding_value=self.pad_idx)
-        target = pad_sequence(target_data, batch_first=False, padding_value=self.pad_idx)
+        source = pad_sequence(source_data, batch_first=True, padding_value=self.pad_idx)
+        target = pad_sequence(target_data, batch_first=True, padding_value=self.pad_idx)
         return source, target
 
 
@@ -187,14 +188,16 @@ def create_mask(src, tgt):
 
 
 
-def padding_mask(batch,pad_idx):
-    return ((batch==pad_idx)==0).type(torch.IntTensor)
+def padding_mask(batch,pad_idx,seq_dim=1):
+    return ((batch==pad_idx)==0).unsqueeze(seq_dim).type(torch.IntTensor)
 
 def subseqent_mask(size):
-    return (torch.triu(torch.ones((size,size)),diagonal=1)==0).type(torch.IntTensor)
+    sub_mask=(torch.triu(torch.ones((size,size)),diagonal=1)==0).type(torch.IntTensor)
+    sub_mask=sub_mask.unsqueeze(0)
+    return sub_mask
 
-def mask(batch,pad_idx,seq_dim):
-    pad_mask=padding_mask(batch,pad_idx)
+def mask(batch,pad_idx,seq_dim=1):
+    pad_mask=padding_mask(batch,pad_idx,seq_dim)
     subseq_mask=subseqent_mask(batch.size(seq_dim))
     return (pad_mask & subseq_mask).type(torch.IntTensor)
 

@@ -13,6 +13,7 @@ from torch.nn import LayerNorm
 import numpy as np
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# DEVICE='cpu'
 
 
 class EncoderDecoder(nn.Module):
@@ -151,7 +152,7 @@ class Attention(nn.Module):
     attent=torch.matmul(query,key.transpose(-1,-2))/math.sqrt(self.d_k_size)#batch,seq(query),seq(value)
     if mask is not None:
       # breakpoint()
-      attent.masked_fill_(mask,float('-inf'))
+      attent.masked_fill_((mask==0),float('-inf'))
     attent=attent.softmax(dim=-1)
     return attent, attent@value
     
@@ -163,9 +164,10 @@ class MultiHeadAttention(nn.Module):
     self.d_v=d_model//h
     self.d_model=d_model
     self.attHeads=clone(Attention(d_model,self.d_k,self.d_v),h)
+    # self.register_buffer('collective_attention')
 
   def forward(self,query,key,value,x_mask):
-    appendVal=torch.Tensor([])
+    appendVal=torch.Tensor([]).to(DEVICE)
     
     for i,attHead in enumerate(self.attHeads):
       # breakpoint()

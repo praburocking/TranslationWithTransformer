@@ -26,7 +26,7 @@ print(len(trainDataset.src_lang_vocab.stoi))
 print(len(trainDataset.tgt_lang_vocab.stoi))
 src_lang_len=len(trainDataset.src_lang_vocab.stoi)
 tgt_lang_len=len(trainDataset.tgt_lang_vocab.stoi)
-transformer=get_model(device=DEVICE)
+transformer=get_model(tgt_vocab_len=tgt_lang_len,src_vocab_len=src_lang_len,device=DEVICE)
 # print(transformer)
 SEQ_DIM=1
 
