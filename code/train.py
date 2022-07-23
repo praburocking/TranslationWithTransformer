@@ -82,8 +82,8 @@ def translate(model,src_lang_sentance,vocab,start_idx,end_idx):
     return str
 
 
-EPOCHS=5
-batch_size=20
+EPOCHS=10
+batch_size=10
 loss_fn = torch.nn.CrossEntropyLoss(ignore_index=SPECIAL_CHAR['<PAD>'])
 optimizer = torch.optim.Adam(transformer.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
 for i in range(EPOCHS):

@@ -68,6 +68,22 @@ def get_data(src_file_path, tgt_file_path,src_lang_name, tgt_lang_name, val_frac
     return train_data,val_data
 
 
+# def get_data(src_file_path, src_lang_name, tgt_lang_name, val_frac=0.01):
+#     raw_src = read_file_to_list(src_file_path)
+#     raw_tgt = read_file_to_list(tgt_file_path)
+#     data = pd.DataFrame({src_lang_name: raw_src, tgt_lang_name: raw_tgt})
+#
+#     # data =preprocess(data,src_lang_name,tgt_lang_name)
+#
+#     val_split_idx = int(len(data) * val_frac)  # index on which to split
+#     data_idx = list(range(len(data)))  # create a list of ints till len of data
+#     np.random.shuffle(data_idx)
+#     train_idx = data_idx[:val_split_idx]
+#     val_idx = data_idx[val_split_idx:]
+#     train_data = data.iloc[train_idx].reset_index().drop('index', axis=1)
+#     val_data = data.iloc[val_idx].reset_index().drop('index', axis=1)
+#     return train_data,val_data
+
 # In[8]:
 
 
