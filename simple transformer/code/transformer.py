@@ -144,14 +144,11 @@ class Attention(nn.Module):
     self.d_v_size=d_v_size
     
   def forward(self,query,key,value,mask=None):
-    # breakpoint()
     key=self.k_lin(key)#batch,seq,d_k
     query=self.q_lin(query)#batch,seq,d_k
     value=self.v_lin(value)#batch,seq,d_v
-    #breakpoint()
     attent=torch.matmul(query,key.transpose(-1,-2))/math.sqrt(self.d_k_size)#batch,seq(query),seq(value)
     if mask is not None:
-      # breakpoint()
       attent.masked_fill_((mask==0),float('-inf'))
     attent=attent.softmax(dim=-1)
     return attent, attent@value
@@ -170,7 +167,6 @@ class MultiHeadAttention(nn.Module):
     appendVal=torch.Tensor([]).to(DEVICE)
     
     for i,attHead in enumerate(self.attHeads):
-      # breakpoint()
       _,attentVal=attHead(query,key,value,x_mask)
       appendVal=torch.cat((appendVal,attentVal),-1)
     return appendVal
@@ -188,11 +184,11 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(
             torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)
         )
-        print(div_term)
+        # print(div_term)
         div_term = torch.exp(
             torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)
         )
-        print(div_term)
+        # print(div_term)
 
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)

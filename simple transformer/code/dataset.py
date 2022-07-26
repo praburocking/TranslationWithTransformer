@@ -26,7 +26,6 @@ def read_file_to_list(path):
     content_list = [x.strip() for x in content_list]
     return content_list
 
-
 def preprocess(data,src_lang_name,tgt_lang_name):
     # preProcess the data
     data[src_lang_name] = data[src_lang_name].apply(lambda x: re.sub("'", '', x).lower())
@@ -51,7 +50,7 @@ def preprocess(data,src_lang_name,tgt_lang_name):
     data[tgt_lang_name] = data[tgt_lang_name].apply(lambda x: re.sub(" +", " ", x))
     return data
 
-def get_data(src_file_path, tgt_file_path,src_lang_name, tgt_lang_name, val_frac=0.01):
+def get_data(src_file_path, tgt_file_path,src_lang_name, tgt_lang_name, val_frac=0.1):
     raw_src = read_file_to_list(src_file_path)
     raw_tgt = read_file_to_list(tgt_file_path)
     data = pd.DataFrame({src_lang_name: raw_src, tgt_lang_name: raw_tgt})
@@ -61,8 +60,8 @@ def get_data(src_file_path, tgt_file_path,src_lang_name, tgt_lang_name, val_frac
     val_split_idx = int(len(data) * val_frac)  # index on which to split
     data_idx = list(range(len(data)))  # create a list of ints till len of data
     np.random.shuffle(data_idx)
-    train_idx = data_idx[:val_split_idx]
-    val_idx = data_idx[val_split_idx:]
+    val_idx = data_idx[:val_split_idx]
+    train_idx = data_idx[val_split_idx:]
     train_data = data.iloc[train_idx].reset_index().drop('index', axis=1)
     val_data = data.iloc[val_idx].reset_index().drop('index', axis=1)
     return train_data,val_data

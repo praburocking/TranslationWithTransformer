@@ -13,7 +13,7 @@ fr_file_path = '../data/french_trans.txt'
 src_lang_name = 'en'
 tgt_lang_name = 'fr'
 
-train_data,val_data=get_data(eng_file_path, fr_file_path,src_lang_name, tgt_lang_name, val_frac=0.01)
+train_data,val_data=get_data(eng_file_path, fr_file_path,src_lang_name, tgt_lang_name, val_frac=0.1)
 
 SPECIAL_CHAR = {'<UNX>': 0, '<SOS>': 1, '<EOS>': 2, '<PAD>': 3}
 
@@ -31,18 +31,15 @@ transformer=get_model(tgt_vocab_len=tgt_lang_len,src_vocab_len=src_lang_len,devi
 SEQ_DIM=1
 
 def train(model,optimizer,loss_fn,batch_size):
-    model.train()
+
     total_loss = 0
     train_loader = DataLoader(trainDataset, batch_size=batch_size, num_workers=0,
                               shuffle=True, collate_fn=Collate(pad_idx=SPECIAL_CHAR['<PAD>']), pin_memory=True)
+
+    model.train()
     for i,(src,tgt) in enumerate(train_loader):
         src=src.type(torch.IntTensor).to(device=DEVICE)
         tgt = tgt.type(torch.IntTensor).to(device=DEVICE)
-        # print(src.size())
-        # print(tgt.size())
-        # print(src.dtype)
-        # print(tgt.dtype)
-       # print("##############")
         tgt_input=tgt[:,:-1]
         tgt_output=tgt[:,1:]
         tgt_mask=mask(tgt_input,SPECIAL_CHAR['<PAD>'],seq_dim=SEQ_DIM).to(device=DEVICE)
@@ -54,10 +51,38 @@ def train(model,optimizer,loss_fn,batch_size):
         loss.backward()
         optimizer.step()
         total_loss+=loss
-        # print(loss)
-        # if i==0:
-        #     break
-    print(f'total loss --{total_loss/len(train_loader)}')
+
+        if i%50==0:
+            print(f' training batch {i}/{len(train_loader)} :: loss-- {loss}')
+            #break
+
+    return total_loss/len(train_loader),model
+
+def model_eval(model,loss_fn,batch_size):
+    model.eval()
+    val_loader = DataLoader(valDataset, batch_size=batch_size, num_workers=0,
+                            shuffle=True, collate_fn=Collate(pad_idx=SPECIAL_CHAR['<PAD>']), pin_memory=True)
+    total_val_loss = 0
+    for i, (src, tgt) in enumerate(val_loader):
+        src = src.type(torch.IntTensor).to(device=DEVICE)
+        tgt = tgt.type(torch.IntTensor).to(device=DEVICE)
+        tgt_input = tgt[:, :-1]
+        tgt_output = tgt[:, 1:]
+        tgt_mask = mask(tgt_input, SPECIAL_CHAR['<PAD>'], seq_dim=SEQ_DIM).to(device=DEVICE)
+        src_mask = padding_mask(src, SPECIAL_CHAR['<PAD>']).to(device=DEVICE)
+
+        logits = transformer(src, src_mask, tgt_input, tgt_mask)
+        loss = loss_fn(logits.reshape(-1, logits.size(-1)), tgt_output.reshape(-1).type(torch.long))
+        total_val_loss += loss
+        if i%50==0:
+            print(f' validation batch {i}/{len(val_loader)} :: loss-- {loss}')
+            #break
+
+    return total_val_loss/len(val_loader)
+
+
+
+
 
 def translate(model,src_lang_sentance,vocab,start_idx,end_idx):
     model.eval()
@@ -82,12 +107,34 @@ def translate(model,src_lang_sentance,vocab,start_idx,end_idx):
     return str
 
 
-EPOCHS=10
-batch_size=10
+EPOCHS=2
+batch_size=32
 loss_fn = torch.nn.CrossEntropyLoss(ignore_index=SPECIAL_CHAR['<PAD>'])
 optimizer = torch.optim.Adam(transformer.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
+lowest_val_score=float('inf')
+best_epoch=0
+patience_counter=0
+max_patience_counter=1
 for i in range(EPOCHS):
-    train(transformer,optimizer,loss_fn,batch_size)
+    train_loss=0
+    # train_loss,transformer=train(transformer,optimizer,loss_fn,batch_size)
+    # states_dict = deepcopy(transformer.state_dict())
+    # torch.save(states_dict, "transformer_param")
+    transformer = get_model(tgt_vocab_len=tgt_lang_len, src_vocab_len=src_lang_len, device=DEVICE)
+    transformer.load_state_dict(torch.load("transformer_param"))
+    val_loss=model_eval(transformer, loss_fn, batch_size)
+    print(f' train loss ---{train_loss} ::: val loss ---{val_loss}')
+    if lowest_val_score > val_loss:
+        lowest_val_score=val_loss
+        best_epoch=i
+        # torch.save(states_dict, "best_transformer_param")
+        print("best transformer_loss...."+str(val_loss))
+    else:
+        if(max_patience_counter==patience_counter):
+            print("breaking the iteration since max patience achieved")
+            break
+        patience_counter+=1
+
 
 
 # transformer.load_state_dict(torch.load("transformer_param"))

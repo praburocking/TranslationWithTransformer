@@ -70,8 +70,6 @@ def create_src_tgt_vocab(dl, src_specials, tgt_specials,src_tokenizer,tgt_tokeni
     for i, data in enumerate(dl):
         src_counter.update(src_tokenizer(data[0][0][0]))
         tgt_counter.update(tgt_tokenizer(data[0][1][0]))
-        # if i==10000:
-        #     break
         if i%100==0:
             print("progress....."+str(i))
     # First sort by descending frequency, then lexicographically
@@ -106,7 +104,8 @@ def create_src_tgt_vocab(dl, src_specials, tgt_specials,src_tokenizer,tgt_tokeni
     Save and retrieve the stats dict to save and load the vocab module again as it is a instance of nn.Module
     """
 
-
+EN_VOCAB_PATH='../data/src_en_vocab.vocab'
+FR_VOCAB_PATH='../data/tgt_fr_vocab.vocab'
 seconds1=time.time()
 data_path='R:\\studies\\transformers\\translation\\data\\en-fr.csv'
 mode="train"
@@ -116,17 +115,16 @@ tok_fr=get_tokenizer('spacy', language='fr_core_news_sm')
 # Define special symbols and indices
 UNK_IDX, PAD_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
 # Make sure the tokens are in order of their indices to properly insert them in vocab
-special_symbols = ['<unk>', '<pad>', '<bos>', '<eos>']
+SPECIAL_SYMBOLS = ['<unk>', '<pad>', '<bos>', '<eos>']
 
 dp=get_data_pipes(data_path,mode=mode,batch_size=batch_size)
 dl=get_data_loader(dp,batch_size=1)
-src_vocab,tgt_vocab=create_src_tgt_vocab(dl,special_symbols,special_symbols,tok_en,tok_fr)
+src_vocab,tgt_vocab=create_src_tgt_vocab(dl,SPECIAL_SYMBOLS,SPECIAL_SYMBOLS,tok_en,tok_fr)
 
-torch.save(src_vocab,"src_en_vocab.vocab")
-torch.save(tgt_vocab,"tgt_fr_vocab.vocab")
+torch.save(src_vocab,EN_VOCAB_PATH)
+torch.save(tgt_vocab,FR_VOCAB_PATH)
 
 
 total_seconds=time.time()-seconds1
-# re_vocab=torch.load('src_en_vocab.vocab')
-# print(re_vocab.get_stoi())
 print("total time taken in seconds ... "+str(total_seconds))
+
