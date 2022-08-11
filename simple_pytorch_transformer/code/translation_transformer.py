@@ -86,6 +86,7 @@ SPECIAL_SYMBOLS = ['<unk>', '<pad>', '<bos>', '<eos>']
 tok_en=get_tokenizer('spacy', language='en_core_web_sm')
 tok_fr=get_tokenizer('spacy', language='fr_core_news_sm')
 data=read_data(eng_data_path,fr_data_path)
+val_data=read_data(val_eng_data_path,val_fr_data_path)
 src_vocab,tgt_vocab=create_src_tgt_vocab(iter(data),tok_en,tok_fr,SPECIAL_SYMBOLS,SPECIAL_SYMBOLS,src_max_tokens=250000,tgt_max_tokens=250000,
                                          src_min_freq=1,tgt_min_freq=1,special_first=True,src_default='<unk>',tgt_default='<unk>')
 UNK,PAD_IDX,BOS_IDX,EOS_IDX=0,1,2,3
@@ -276,7 +277,7 @@ from torch.utils.data import DataLoader
 def train_epoch(model, optimizer):
     model.train()
     losses = 0
-    train_iter=iter(data)
+    # train_iter=iter(data)
     train_dataloader = DataLoader(data, batch_size=BATCH_SIZE, collate_fn=collate_fn,drop_last=True)
 
     for i,(src, tgt) in enumerate(train_dataloader):
@@ -303,45 +304,58 @@ def train_epoch(model, optimizer):
 
     return losses
 
-#
-# def evaluate(model):
-#     model.eval()
-#     losses = 0
-#
-#     val_iter = Multi30k(split='valid', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
-#     val_dataloader = DataLoader(val_iter, batch_size=BATCH_SIZE, collate_fn=collate_fn)
-#
-#     for src, tgt in val_dataloader:
-#         src = src.to(DEVICE)
-#         tgt = tgt.to(DEVICE)
-#
-#         tgt_input = tgt[:-1, :]
-#
-#         src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input)
-#
-#         logits = model(src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask)
-#
-#         tgt_out = tgt[1:, :]
-#         loss = loss_fn(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1))
-#         losses += loss.item()
-#
-#     return losses / len(val_dataloader)
+
+def evaluate(model):
+    model.eval()
+    losses = 0
+
+    val_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, collate_fn=collate_fn,drop_last=True)
+
+    for src, tgt in val_dataloader:
+        src = src.to(DEVICE)
+        tgt = tgt.to(DEVICE)
+
+        tgt_input = tgt[:-1, :]
+
+        src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input)
+
+        logits = model(src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask)
+
+        tgt_out = tgt[1:, :]
+        loss = loss_fn(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1))
+        losses += loss.item()
+
+    return losses
 
 
 from timeit import default_timer as timer
 NUM_EPOCHS = 1
+MAX_PATIENT=2
+BEST_MODEL_LOC="../data/transformer_param_torch"
+min_loss=np.inf
+patient_counter=0
+
+
 
 for epoch in range(1, NUM_EPOCHS+1):
     start_time = timer()
     train_loss = train_epoch(transformer, optimizer)
     end_time = timer()
     val_loss=0
-    # val_loss = evaluate(transformer)
+    val_loss = evaluate(transformer)
     print((f"Epoch: {epoch}, Train loss: {train_loss:.3f}, Val loss: {val_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
+    if MIN_LOSS<val_loss:
+        MIN_LOSS=val_loss
+        states_dict = deepcopy(transformer.state_dict())
+        torch.save(states_dict, BEST_MODEL_LOC)
+    else:
+        if patient_counter>MAX_PATIENT:
+            print("breaking the epoch loop as maximum patient count reached")
+        else:
+            patient_counter+=1
 
-states_dict = deepcopy(transformer.state_dict())
-torch.save(states_dict, "transformer_param_torch")
-transformer.load_state_dict(torch.load('transformer_param_torch'),strict=False)
+
+transformer.load_state_dict(torch.load(BEST_MODEL_LOC),strict=False)
 
 # function to generate output sequence using greedy algorithm 
 def greedy_decode(model, src, src_mask, max_len, start_symbol):
