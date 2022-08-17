@@ -8,6 +8,11 @@ from torch.utils.data import DataLoader
 import torchdata.datapipes as dp
 from torchtext.vocab import build_vocab_from_iterator
 import numpy as np
+import torch
+from torch.utils.tensorboard import SummaryWriter
+# from tensorboard.plugins.hparams import api as hp
+
+
 
 from torchtext.vocab import vocab
 from collections import Counter, OrderedDict
@@ -24,6 +29,7 @@ from torch.nn import Transformer
 import math
 from copy import deepcopy
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(DEVICE)
 
 
 eng_data_path="../data/train_eng_trans.txt"
@@ -31,11 +37,20 @@ fr_data_path= "../data/train_french_trans.txt"
 
 val_eng_data_path="../data/val_eng_trans.txt"
 val_fr_data_path= "../data/val_french_trans.txt"
+BEST_MODEL_LOC="../data/transformer_param_torch"
+
+train_writer = SummaryWriter('runs/train',flush_secs=30)
+val_writer=SummaryWriter('runs/val',flush_secs=30)
+
+
+
+
+
 
 def read_data(src_data_path,tgt_data_path):
     fo1=dp.iter.FileOpener(datapipe= [src_data_path], encoding='utf-8').readlines().map(lambda x:x[1])
     fo2=dp.iter.FileOpener(datapipe= [tgt_data_path], encoding='utf-8').readlines().map(lambda x:x[1])
-    fo=fo1.zip(fo2)
+    fo=fo1.zip(fo2).shuffle()
     return fo
 
 def create_src_tgt_vocab(dl,src_tokenizer,tgt_tokenizer,src_specials,tgt_specials,src_max_tokens=250000,tgt_max_tokens=250000,
@@ -174,9 +189,6 @@ class Seq2SeqTransformer(nn.Module):
 """During training, we need a subsequent word mask that will prevent model to look into
 the future words when making predictions. We will also need masks to hide
 source and target padding tokens. Below, let's define a function that will take care of both. 
-
-
-
 """
 
 def generate_square_subsequent_mask(sz):
@@ -207,25 +219,7 @@ torch.manual_seed(0)
 
 SRC_VOCAB_SIZE = len(src_vocab.get_stoi())
 TGT_VOCAB_SIZE = len(tgt_vocab.get_stoi())
-EMB_SIZE = 512
-NHEAD = 8
-FFN_HID_DIM = 512
-BATCH_SIZE = 128
-NUM_ENCODER_LAYERS = 3
-NUM_DECODER_LAYERS = 3
 
-transformer = Seq2SeqTransformer(NUM_ENCODER_LAYERS, NUM_DECODER_LAYERS, EMB_SIZE, 
-                                 NHEAD, SRC_VOCAB_SIZE, TGT_VOCAB_SIZE, FFN_HID_DIM)
-
-for p in transformer.parameters():
-    if p.dim() > 1:
-        nn.init.xavier_uniform_(p)
-
-transformer = transformer.to(DEVICE)
-
-loss_fn = torch.nn.CrossEntropyLoss(ignore_index=PAD_IDX)
-
-optimizer = torch.optim.Adam(transformer.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
 
 
 from torch.nn.utils.rnn import pad_sequence
@@ -267,19 +261,20 @@ def collate_fn(batch,pad_idx=PAD_IDX):
 
 """Let's define training and evaluation loop that will be called for each 
 epoch.
-
-
-
 """
+
+
+
 
 from torch.utils.data import DataLoader
 
-def train_epoch(model, optimizer):
+def train_epoch(model, data,optimizer,loss_fn):
     model.train()
     losses = 0
     # train_iter=iter(data)
     train_dataloader = DataLoader(data, batch_size=BATCH_SIZE, collate_fn=collate_fn,drop_last=True)
-
+    #train_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, collate_fn=collate_fn, drop_last=True)
+    total_size=0
     for i,(src, tgt) in enumerate(train_dataloader):
         # breakpoint()
         src = src.to(DEVICE)
@@ -296,21 +291,22 @@ def train_epoch(model, optimizer):
         tgt_out = tgt[1:, :]
         loss = loss_fn(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1))
         loss.backward()
-
+        total_size+=BATCH_SIZE
         optimizer.step()
         losses += loss.item()
-        if i%100==0:
+        if i%50==0:
             print("batch..... "+str(i))
 
-    return losses
+
+    return losses/total_size
 
 
-def evaluate(model):
+def evaluate(model,val_data,loss_fn):
     model.eval()
     losses = 0
 
     val_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, collate_fn=collate_fn,drop_last=True)
-
+    total_size=0
     for src, tgt in val_dataloader:
         src = src.to(DEVICE)
         tgt = tgt.to(DEVICE)
@@ -320,44 +316,81 @@ def evaluate(model):
         src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input)
 
         logits = model(src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask)
-
+        total_size+=BATCH_SIZE
         tgt_out = tgt[1:, :]
         loss = loss_fn(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1))
         losses += loss.item()
 
-    return losses
+    return losses/total_size
 
+
+def plot_graph(model,val_data):
+    model.eval()
+    val_dataloader = DataLoader(val_data, batch_size=1, collate_fn=collate_fn,drop_last=True)
+    for src, tgt in val_dataloader:
+        src = src.to(DEVICE)
+        tgt = tgt.to(DEVICE)
+        tgt_input = tgt[:-1, :]
+        src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input)
+        val_writer.add_graph(model, (src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask))
+        val_writer.flush()
+        break
 
 from timeit import default_timer as timer
-NUM_EPOCHS = 1
-MAX_PATIENT=2
-BEST_MODEL_LOC="../data/transformer_param_torch"
-min_loss=np.inf
-patient_counter=0
+
+BATCH_SIZE = 128
+EMB_SIZE = 512
+NHEAD = 8
+FFN_HID_DIM = 512
+NUM_ENCODER_LAYERS = 3
+NUM_DECODER_LAYERS = 3
+def get_model(emb_size=EMB_SIZE,nhead=NHEAD,ffn_hid_dim=FFN_HID_DIM,num_encoder_layers=NUM_DECODER_LAYERS,src_vocab_size=SRC_VOCAB_SIZE,tgt_vocab_size=TGT_VOCAB_SIZE,lr=0.0001):
 
 
+    transformer = Seq2SeqTransformer(num_encoder_layers,num_encoder_layers, emb_size,
+                                     nhead, src_vocab_size, tgt_vocab_size,ffn_hid_dim)
 
-for epoch in range(1, NUM_EPOCHS+1):
-    start_time = timer()
-    train_loss = train_epoch(transformer, optimizer)
-    end_time = timer()
-    val_loss=0
-    val_loss = evaluate(transformer)
-    print((f"Epoch: {epoch}, Train loss: {train_loss:.3f}, Val loss: {val_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
-    if MIN_LOSS<val_loss:
-        MIN_LOSS=val_loss
-        states_dict = deepcopy(transformer.state_dict())
-        torch.save(states_dict, BEST_MODEL_LOC)
-    else:
-        if patient_counter>MAX_PATIENT:
-            print("breaking the epoch loop as maximum patient count reached")
+    for p in transformer.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+
+    transformer = transformer.to(DEVICE)
+
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=PAD_IDX)
+
+    optimizer = torch.optim.Adam(transformer.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-9)
+    return transformer,loss_fn,optimizer
+
+
+def train(model,data,val_data,loss_fn,optimizer,num_epochs=5,max_patient=2,best_model_loc="../data/transformer_param_torch"):
+    min_loss = np.inf
+    patient_counter = 0
+    for epoch in range(1, num_epochs + 1):
+        start_time = timer()
+        train_loss = train_epoch(model, data,optimizer,loss_fn)
+        end_time = timer()
+        val_loss = 0
+        val_loss = evaluate(model,val_data,loss_fn)
+        print((
+                  f"Epoch: {epoch}, Train loss: {train_loss:.3f}, Val loss: {val_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
+        train_writer.add_scalar("loss", val_loss, epoch)
+        val_writer.add_scalar("loss", train_loss, epoch)
+        train_writer.add_scalar("time_per_epoch",end_time - start_time,epoch)
+        if min_loss > val_loss:
+            min_loss = val_loss
+            states_dict = deepcopy(model.state_dict())
+            torch.save(states_dict, best_model_loc)
+            print("new minimum validate loss found ... " + str(val_loss))
         else:
-            patient_counter+=1
+            if patient_counter > max_patient:
+                print("breaking the epoch loop as maximum patient count reached")
+            else:
+                patient_counter += 1
+    return model,min_loss
 
 
-transformer.load_state_dict(torch.load(BEST_MODEL_LOC),strict=False)
 
-# function to generate output sequence using greedy algorithm 
+# function to generate output sequence using greedy algorithm
 def greedy_decode(model, src, src_mask, max_len, start_symbol):
     src = src.to(DEVICE)
     src_mask = src_mask.to(DEVICE)
@@ -387,8 +420,48 @@ def translate(model: torch.nn.Module, src_sentence: str):
     src = src_text_transform(src_sentence).view(-1, 1)
     num_tokens = src.shape[0]
     src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
+
     tgt_tokens = greedy_decode(
         model,  src, src_mask, max_len=num_tokens + 5, start_symbol=BOS_IDX).flatten()
     return " ".join(tgt_vocab.lookup_tokens(list(tgt_tokens.cpu().numpy()))).replace("<bos>", "").replace("<eos>", "")
 
+def search_hp_params(hp_params,data,val_data,data_len=100000,val_len=100000):
+    best_param={}
+    best_loss=np.inf
+    # data=data.slice(0,data_len)
+    # val_data=val_data.slice(0,val_len)
+    for lr_rate in hp_params['lr_rates']:
+        for num_layer in hp_params['num_layers']:
+            print("num layer "+str(num_layer)+"::: lr_rate "+str(lr_rate))
+            model,loss_fn,optimizer=get_model(lr=lr_rate,num_encoder_layers=num_layer)
+            model,loss=train(model,data,val_data ,loss_fn, optimizer)
+            if loss<best_loss:
+                best_loss=loss
+                best_param['lr_rate']=lr_rate
+                best_param['num_layers']=num_layer
+            val_writer.add_hparams({'lr': lr_rate, 'num_layers': num_layer}, { 'hparam/loss': loss})
+    return best_param
+
+
+
+
+hp_params={"lr_rates":[0.001,0.007,0.005],"num_layers":[3,2]}
+# hp_params={"lr_rates":[0.0001],"num_layers":[3]}
+#best_param=search_hp_params(hp_params,data,val_data)
+#transformer,loss_fn,optimizer=get_model(lr=best_param['lr_rate'],num_encoder_layers=best_param["num_layers"])
+transformer,loss_fn,optimizer=get_model(lr=0.005,num_encoder_layers=2)
+# train(transformer,data,val_data,loss_fn,optimizer)
+
+transformer.load_state_dict(torch.load(BEST_MODEL_LOC),strict=False)
+train_writer.flush()
+val_writer.flush()
+
+
+
+# plot_graph(transformer)
+train_writer.flush()
+val_writer.flush()
+train_writer.close()
+val_writer.close()
 print(translate(transformer, "how are you doing ?"))
+
